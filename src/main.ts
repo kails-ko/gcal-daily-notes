@@ -1,6 +1,8 @@
 import { MarkdownView, Notice, Plugin, TFile } from 'obsidian';
 import { DEFAULT_SETTINGS, GCalSettings, GCalSettingTab } from './settings';
 import { fetchEventsForDate } from './calendar';
+import { GCalSidebarView, SIDEBAR_VIEW_TYPE } from './sidebar';
+import { EventNoteModal } from './eventNoteModal';
 
 const DAILY_NOTE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -11,8 +13,18 @@ export default class GCalDailyNotes extends Plugin {
 		await this.loadSettings();
 		this.addSettingTab(new GCalSettingTab(this.app, this));
 
-		// Wait until Obsidian has finished loading all existing files before
-		// listening for 'create', otherwise every file triggers on startup
+		// Register sidebar view
+		this.registerView(
+			SIDEBAR_VIEW_TYPE,
+			(leaf) => new GCalSidebarView(leaf, this.settings),
+		);
+
+		// Ribbon icon to open sidebar
+		this.addRibbonIcon('calendar-days', 'GCal Day View', () => {
+			void this.activateSidebar();
+		});
+
+		// Wait until layout is ready before listening for file creates
 		this.app.workspace.onLayoutReady(() => {
 			this.registerEvent(
 				this.app.vault.on('create', (file) => {
@@ -28,11 +40,116 @@ export default class GCalDailyNotes extends Plugin {
 			name: 'Insert Google Calendar events for this note',
 			callback: () => this.insertEventsAtCursor(),
 		});
+
+		this.addCommand({
+			id: 'open-gcal-sidebar',
+			name: 'Open GCal Day View sidebar',
+			callback: () => void this.activateSidebar(),
+		});
+
+		this.addCommand({
+			id: 'create-event-note',
+			name: 'Create event note for selected event',
+			callback: () => void this.createEventNote(),
+		});
 	}
 
-	onunload() {}
+	onunload() {
+		this.app.workspace.detachLeavesOfType(SIDEBAR_VIEW_TYPE);
+	}
 
-	// Called automatically when a daily note is created
+	// ── Sidebar ────────────────────────────────────────────────────────────────
+
+	async activateSidebar() {
+		const { workspace } = this.app;
+		let leaf = workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE)[0];
+		if (!leaf) {
+			leaf = workspace.getRightLeaf(false) ?? workspace.getLeaf(false);
+			await leaf.setViewState({ type: SIDEBAR_VIEW_TYPE, active: true });
+		}
+		workspace.revealLeaf(leaf);
+		// Wire double-click callback after the view is ready
+		const view = leaf.view;
+		if (view instanceof GCalSidebarView) {
+			view.onCreateNote = () => void this.createEventNote();
+		}
+	}
+
+	getSidebarView(): GCalSidebarView | null {
+		const leaf = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE)[0];
+		if (leaf && leaf.view instanceof GCalSidebarView) {
+			const view = leaf.view;
+			if (!view.onCreateNote) view.onCreateNote = () => void this.createEventNote();
+			return view;
+		}
+		return null;
+	}
+
+	// ── Create event note ──────────────────────────────────────────────────────
+
+	private async createEventNote() {
+		const sidebar = this.getSidebarView();
+		if (!sidebar) {
+			new Notice('Open the GCal Day View sidebar first.');
+			return;
+		}
+
+		const ev = sidebar.selectedEvent;
+		if (!ev) {
+			new Notice('Click an event in the sidebar to select it first.');
+			return;
+		}
+
+		// Build default title: "YYYY-MM-DD — Event Name"
+		const date = sidebar.getSelectedDate().toISOString().slice(0, 10);
+		const safeName = ev.summary.replace(/[\\/:*?"<>|]/g, '-');
+		const defaultTitle = `${date} ${safeName}`;
+
+		new EventNoteModal(this.app, defaultTitle, async (chosenTitle) => {
+			const folder = this.settings.eventNoteFolder.replace(/\/$/, '');
+			const notePath = `${folder}/${chosenTitle}.md`;
+
+			// If the note already exists, just open it
+			const existing = this.app.vault.getFileByPath(notePath);
+			if (existing) {
+				await this.app.workspace.getLeaf(false).openFile(existing);
+				return;
+			}
+
+			// Build note content from template or bare
+			let content = '';
+			if (this.settings.eventNoteTemplate) {
+				const templateFile = this.app.vault.getFileByPath(this.settings.eventNoteTemplate);
+				if (!templateFile) {
+					new Notice(`Template not found: ${this.settings.eventNoteTemplate}`);
+					return;
+				}
+				const raw = await this.app.vault.read(templateFile);
+				content = raw
+					.replace(/\{\{summary\}\}/g, ev.summary)
+					.replace(/\{\{title\}\}/g, ev.summary)
+					.replace(/\{\{date\}\}/g, date)
+					.replace(/\{\{time\}\}/g, ev.start)
+					.replace(/\{\{icsEventStart\}\}/g, ev.start)
+					.replace(/\{\{endTime\}\}/g, ev.end)
+					.replace(/\{\{icsEventEnd\}\}/g, ev.end)
+					.replace(/\{\{url\}\}/g, ev.url)
+					.replace(/\{\{icsEventUrl\}\}/g, ev.url);
+			}
+
+			try {
+				const newFile = await this.app.vault.create(notePath, content);
+				await this.app.workspace.getLeaf(false).openFile(newFile);
+				await sidebar.renderView();
+				new Notice(`Created: ${newFile.basename}`);
+			} catch (e) {
+				new Notice(`Failed to create note: ${(e as Error).message}`);
+			}
+		}).open();
+	}
+
+	// ── Daily note auto-insert ─────────────────────────────────────────────────
+
 	private async insertEventsIntoFile(file: TFile) {
 		const dateStr = this.extractDateFromFilename(file.basename);
 		if (!dateStr || !this.settings.refreshToken) return;
@@ -58,7 +175,6 @@ export default class GCalDailyNotes extends Plugin {
 		}
 	}
 
-	// Called by the manual command — inserts at cursor position
 	private async insertEventsAtCursor() {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view) {
@@ -129,5 +245,7 @@ export default class GCalDailyNotes extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+		// Push updated settings into the live sidebar view if open
+		this.getSidebarView()?.updateSettings(this.settings);
 	}
 }

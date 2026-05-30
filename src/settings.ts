@@ -7,7 +7,10 @@ export interface CalendarEntry {
 	id: string;
 	name: string;
 	enabled: boolean;
+	color: string;
 }
+
+export type SidebarView = 'list' | 'timeline';
 
 export interface GCalSettings {
 	clientId: string;
@@ -15,6 +18,10 @@ export interface GCalSettings {
 	refreshToken: string;
 	calendars: CalendarEntry[];
 	insertFormat: string;
+	placeholder: string;
+	eventNoteFolder: string;
+	eventNoteTemplate: string;
+	defaultSidebarView: SidebarView;
 }
 
 export const DEFAULT_SETTINGS: GCalSettings = {
@@ -23,6 +30,10 @@ export const DEFAULT_SETTINGS: GCalSettings = {
 	refreshToken: '',
 	calendars: [],
 	insertFormat: '### {time} — {summary}',
+	placeholder: '{{gcal}}',
+	eventNoteFolder: '_tofile',
+	eventNoteTemplate: '',
+	defaultSidebarView: 'list',
 };
 
 export class GCalSettingTab extends PluginSettingTab {
@@ -38,7 +49,8 @@ export class GCalSettingTab extends PluginSettingTab {
 		containerEl.empty();
 		containerEl.createEl('h2', { text: 'Google Calendar Daily Notes' });
 
-		// --- Auth ---
+		// ── 1. Authentication ─────────────────────────────────────────────────
+
 		containerEl.createEl('h3', { text: 'Authentication' });
 
 		new Setting(containerEl)
@@ -96,15 +108,93 @@ export class GCalSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		// --- Calendars ---
+		// ── 2. Event Notes ────────────────────────────────────────────────────
+
+		containerEl.createEl('h3', { text: 'Event Notes' });
+
+		new Setting(containerEl)
+			.setName('Event note folder')
+			.setDesc('Folder where new event notes are created (must already exist in your vault).')
+			.addText((text) =>
+				text
+					.setPlaceholder('_tofile')
+					.setValue(this.plugin.settings.eventNoteFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.eventNoteFolder = value.trim();
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName('Event note template')
+			.setDesc(
+				'Path to a template file in your vault (e.g. _templates/_meeting note.md). ' +
+				'Supports {{summary}}, {{date}}, {{time}}, {{endTime}}, and {{url}} tokens.',
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder('_templates/_meeting note.md')
+					.setValue(this.plugin.settings.eventNoteTemplate)
+					.onChange(async (value) => {
+						this.plugin.settings.eventNoteTemplate = value.trim();
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		// ── 3. Format ─────────────────────────────────────────────────────────
+
+		containerEl.createEl('h3', { text: 'Format' });
+
+		new Setting(containerEl)
+			.setName('Default sidebar view')
+			.setDesc('Which view to show when opening the GCal sidebar.')
+			.addDropdown((drop) =>
+				drop
+					.addOption('list', 'Day list')
+					.addOption('timeline', 'Timeline')
+					.setValue(this.plugin.settings.defaultSidebarView)
+					.onChange(async (value) => {
+						this.plugin.settings.defaultSidebarView = value as SidebarView;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName('Template placeholder')
+			.setDesc('Text in your daily note template where events are inserted. If not found, events are appended to the end.')
+			.addText((text) =>
+				text
+					.setPlaceholder('{{gcal}}')
+					.setValue(this.plugin.settings.placeholder)
+					.onChange(async (value) => {
+						this.plugin.settings.placeholder = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName('Event format')
+			.setDesc('Template for each event line. Use {time}, {endTime}, {summary}, and {url}.')
+			.addText((text) =>
+				text
+					.setPlaceholder('[{time}-{endTime} {summary}]({url})')
+					.setValue(this.plugin.settings.insertFormat)
+					.onChange(async (value) => {
+						this.plugin.settings.insertFormat = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		// ── 4. Calendars ──────────────────────────────────────────────────────
+
 		containerEl.createEl('h3', { text: 'Calendars' });
 
 		new Setting(containerEl)
-			.setName('Load calendars')
-			.setDesc('Fetch your calendar list from Google so you can enable or disable each one.')
+			.setName('Refresh calendar list')
+			.setDesc('Fetch your calendars from Google to enable/disable them and set colors.')
 			.addButton((btn) =>
 				btn
-					.setButtonText('Refresh calendar list')
+					.setButtonText('Refresh')
 					.onClick(async () => {
 						if (!this.plugin.settings.refreshToken) {
 							new Notice('Authorize Google Calendar first.');
@@ -112,14 +202,18 @@ export class GCalSettingTab extends PluginSettingTab {
 						}
 						try {
 							const fetched = await fetchCalendarList(this.plugin.settings);
-							// Preserve existing enabled state, add new calendars as enabled by default
-							const existing = new Map(
-								this.plugin.settings.calendars.map((c) => [c.id, c.enabled]),
+							const existingEntries = new Map(
+								this.plugin.settings.calendars.map((c) => [c.id, c]),
 							);
-							this.plugin.settings.calendars = fetched.map((c) => ({
-								...c,
-								enabled: existing.has(c.id) ? (existing.get(c.id) as boolean) : true,
-							}));
+							this.plugin.settings.calendars = fetched.map((c) => {
+								const existing = existingEntries.get(c.id);
+								return {
+									...c,
+									enabled: existing ? existing.enabled : true,
+									// Prefer user-overridden color; fall back to Google's color
+									color: existing?.color ?? c.color,
+								};
+							});
 							await this.plugin.saveSettings();
 							this.display();
 						} catch (e) {
@@ -130,7 +224,7 @@ export class GCalSettingTab extends PluginSettingTab {
 
 		if (this.plugin.settings.calendars.length > 0) {
 			for (const cal of this.plugin.settings.calendars) {
-				new Setting(containerEl)
+				const setting = new Setting(containerEl)
 					.setName(cal.name)
 					.setDesc(cal.id)
 					.addToggle((toggle) =>
@@ -139,28 +233,38 @@ export class GCalSettingTab extends PluginSettingTab {
 							await this.plugin.saveSettings();
 						}),
 					);
+
+				// Color swatch + hex input
+				const colorWrap = setting.controlEl.createDiv('gcal-color-wrap');
+
+				const colorPicker = colorWrap.createEl('input', { cls: 'gcal-color-picker' });
+				colorPicker.type = 'color';
+				colorPicker.value = cal.color || '#4a90e2';
+
+				const hexInput = colorWrap.createEl('input', { cls: 'gcal-hex-input' });
+				hexInput.type = 'text';
+				hexInput.value = cal.color || '';
+				hexInput.placeholder = '#rrggbb';
+				hexInput.maxLength = 7;
+
+				const syncColor = async (hex: string) => {
+					cal.color = hex;
+					colorPicker.value = hex;
+					hexInput.value = hex;
+					await this.plugin.saveSettings();
+				};
+
+				colorPicker.addEventListener('input', () => void syncColor(colorPicker.value));
+				hexInput.addEventListener('change', () => {
+					const val = hexInput.value.trim();
+					if (/^#[0-9a-fA-F]{6}$/.test(val)) void syncColor(val);
+				});
 			}
 		} else {
 			containerEl.createEl('p', {
-				text: 'No calendars loaded yet. Click "Refresh calendar list" above.',
+				text: 'No calendars loaded yet. Click "Refresh" above.',
 				cls: 'setting-item-description',
 			});
 		}
-
-		// --- Format ---
-		containerEl.createEl('h3', { text: 'Format' });
-
-		new Setting(containerEl)
-			.setName('Event format')
-			.setDesc('Template for each event. Use {time} and {summary} as placeholders.')
-			.addText((text) =>
-				text
-					.setPlaceholder('### {time} — {summary}')
-					.setValue(this.plugin.settings.insertFormat)
-					.onChange(async (value) => {
-						this.plugin.settings.insertFormat = value;
-						await this.plugin.saveSettings();
-					}),
-			);
 	}
 }
