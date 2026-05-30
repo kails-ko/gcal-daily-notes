@@ -1,92 +1,103 @@
-# Obsidian Sample Plugin
+# GCal Daily Notes
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+An [Obsidian](https://obsidian.md) plugin that automatically fetches your Google Calendar events into daily notes.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+## Features
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
+- Inserts events when a daily note is created
+- Manual command to insert events at your cursor position
+- Fetches from all your Google Calendars with per-calendar on/off toggles
+- Fully customizable event format using `{time}`, `{endTime}`, `{summary}`, and `{url}` placeholders
 
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and outputs a Notice on click.
-- Registers a global interval which logs 'setInterval' to the console.
+## Example output
 
-## First time developing plugins?
+With the default format `[{time}-{endTime} {summary}]({url})`, events insert as clickable links:
 
-Quick starting guide for new plugin devs:
-
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `src/main.ts` to `main.js`.
-- Make changes to `src/main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
-
-## Releasing new releases
-
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
-
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
-
-## Adding your plugin to the community plugin list
-
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
-
-## How to use
-
-- Clone this repo.
-- Make sure your NodeJS is at least v18 (`node --version`).
-- `npm i` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
-
-## Manually installing the plugin
-
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
-
-## Improve code quality with eslint
-
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code.
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
-
-## Funding URL
-
-You can include funding URLs where people who use your plugin can financially support it.
-
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-	"fundingUrl": "https://buymeacoffee.com"
-}
+```
+[9:00 AM-10:00 AM Team standup](https://calendar.google.com/...)
+[1:00 PM-2:00 PM Design review](https://calendar.google.com/...)
 ```
 
-If you have multiple URLs, you can also do:
+## Setup
 
-```json
-{
-	"fundingUrl": {
-		"Buy Me a Coffee": "https://buymeacoffee.com",
-		"GitHub Sponsor": "https://github.com/sponsors",
-		"Patreon": "https://www.patreon.com/"
-	}
-}
+### 1. Create a Google Cloud project
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com) and create a new project
+2. Go to **APIs & Services → Library**, search for **Google Calendar API**, and enable it
+3. Go to **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**
+4. Set the application type to **Desktop App**
+5. Under **Authorized redirect URIs**, add `http://localhost:42813/callback`
+6. Copy your **Client ID** and **Client Secret**
+
+### 2. Configure the OAuth consent screen
+
+1. Go to **APIs & Services → OAuth consent screen**
+2. Set User Type to **External**
+3. Fill in the required fields (app name, support email)
+4. Under **Test users**, add your Google account email
+
+### 3. Install the plugin
+
+Copy `main.js`, `manifest.json`, and `styles.css` into your vault at:
+
+```
+<vault>/.obsidian/plugins/gcal-daily-notes/
 ```
 
-## API Documentation
+Then enable it in **Settings → Community Plugins**.
 
-See https://docs.obsidian.md
+### 4. Authorize
+
+1. Open **Settings → GCal Daily Notes**
+2. Enter your Client ID and Client Secret
+3. Click **Authorize** — a browser window will open to Google's consent screen
+4. After approving, the plugin stores your refresh token automatically
+
+### 5. Load your calendars
+
+1. Click **Refresh calendar list** in settings
+2. Toggle off any calendars you don't want included (e.g. Birthdays, Holidays)
+
+## Usage
+
+**Automatic:** Create a note named with today's date (e.g. `2026-05-29.md`) and events are inserted automatically.
+
+**Manual:** Open any daily note, place your cursor where you want the events, and run:
+
+```
+Cmd+P → Insert Google Calendar events for this note
+```
+
+## Format placeholders
+
+| Placeholder | Description | Example |
+|---|---|---|
+| `{time}` | Event start time | `9:00 AM` |
+| `{endTime}` | Event end time | `10:00 AM` |
+| `{summary}` | Event title | `Team standup` |
+| `{url}` | Link to the event in Google Calendar | `https://...` |
+
+The format can be any markdown string, for example:
+
+```
+**{time}–{endTime}** {summary}
+```
+
+```
+[{time}-{endTime} {summary}]({url})
+```
+
+## Daily note filename formats
+
+The plugin recognizes filenames in `YYYY-MM-DD` format (e.g. `2026-05-29.md`), which is the default used by the Obsidian Daily Notes core plugin.
+
+## Development
+
+```bash
+git clone https://github.com/kails-ko/gcal-daily-notes
+cd gcal-daily-notes
+npm install
+npm run dev
+```
+
+Copy the folder into your vault's `.obsidian/plugins/` directory and enable it in Obsidian.
