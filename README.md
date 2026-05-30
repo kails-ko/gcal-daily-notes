@@ -1,22 +1,48 @@
 # GCal Daily Notes
 
-An [Obsidian](https://obsidian.md) plugin that automatically fetches your Google Calendar events into daily notes.
+An [Obsidian](https://obsidian.md) plugin that integrates Google Calendar into your vault — inserting events into daily notes and providing a sidebar day/timeline view with event note creation.
+
+---
+
+> [!WARNING]
+> **This plugin is entirely vibe-coded and has not been reviewed or vetted by Obsidian.** It is not listed in the Community Plugins directory. Use at your own risk, and always back up your vault.
+
+---
 
 ## Features
 
-- Inserts events when a daily note is created
-- Manual command to insert events at your cursor position
-- Fetches from all your Google Calendars with per-calendar on/off toggles
-- Fully customizable event format using `{time}`, `{endTime}`, `{summary}`, and `{url}` placeholders
+- **Sidebar day view** — browse your calendar day by day in a clean list or timeline view
+- **Timeline view** — scrollable hourly grid with a live now-indicator and proportionally sized event blocks
+- **Color-coded calendars** — events are tinted by calendar color; customize colors via a color picker in settings
+- **Event note creation** — double-click any event (or use the command palette) to create a linked note from a template, with a customizable title
+- **Linked note badge** — events with an associated note show a `[[]]` badge; click it to open the note
+- **Auto-insert on daily note creation** — events are inserted automatically when a `YYYY-MM-DD` note is created
+- **Manual insert command** — insert events at your cursor in any daily note
+- **Per-calendar toggles** — enable or disable individual calendars from settings
 
-## Example output
+## Sidebar
 
-With the default format `[{time}-{endTime} {summary}]({url})`, events insert as clickable links:
+Open the sidebar by clicking the calendar icon in the ribbon, or via:
 
 ```
-[9:00 AM-10:00 AM Team standup](https://calendar.google.com/...)
-[1:00 PM-2:00 PM Design review](https://calendar.google.com/...)
+Cmd+P → GCal: Open GCal Day View sidebar
 ```
+
+### Navigation
+- Click **‹ ›** to move between days
+- Click the **date label** to open a date picker
+- Click **Today** to jump back to the current day
+
+### Views
+Use the toggle buttons in the top-right of the sidebar header to switch between **List** and **Timeline** views. Set your preferred default in **Settings → Format → Default sidebar view**.
+
+### Creating event notes
+1. Click an event row to select it (highlighted)
+2. Double-click, or run `Cmd+P → GCal: Create event note for selected event`
+3. Edit the pre-filled title in the modal and press **Enter** or **Create**
+4. The note is created in your configured folder and opens immediately
+
+Once a note exists, a `[[]]` badge appears on the event row — click it to open the note directly.
 
 ## Setup
 
@@ -55,41 +81,51 @@ Then enable it in **Settings → Community Plugins**.
 
 ### 5. Load your calendars
 
-1. Click **Refresh calendar list** in settings
-2. Toggle off any calendars you don't want included (e.g. Birthdays, Holidays)
+1. Click **Refresh** under Settings → Calendars
+2. Toggle off any calendars you don't want included
+3. Optionally customize each calendar's color using the color swatch or hex input
 
-## Usage
+## Settings reference
 
-**Automatic:** Create a note named with today's date (e.g. `2026-05-29.md`) and events are inserted automatically.
+### Authentication
+| Setting | Description |
+|---|---|
+| Client ID | OAuth 2.0 Client ID from Google Cloud Console |
+| Client Secret | OAuth 2.0 Client Secret |
+| Authorize | Opens a browser to grant calendar access |
+| Refresh Token | Filled automatically after authorization |
 
-**Manual:** Open any daily note, place your cursor where you want the events, and run:
+### Event Notes
+| Setting | Description |
+|---|---|
+| Event note folder | Folder where new event notes are created (e.g. `_tofile`) |
+| Event note template | Path to a vault template file (e.g. `_templates/_meeting note.md`) |
 
-```
-Cmd+P → Insert Google Calendar events for this note
-```
+Templates support these tokens: `{{summary}}`, `{{date}}`, `{{time}}`, `{{endTime}}`, `{{url}}`, `{{title}}`, `{{icsEventStart}}`, `{{icsEventEnd}}`, `{{icsEventUrl}}`
 
-## Format placeholders
+### Format
+| Setting | Description |
+|---|---|
+| Default sidebar view | `Day list` or `Timeline` |
+| Template placeholder | Token in your daily note template where events are inserted (default `{{gcal}}`) |
+| Event format | Format string for each event line inserted into daily notes |
 
-| Placeholder | Description | Example |
-|---|---|---|
-| `{time}` | Event start time | `9:00 AM` |
-| `{endTime}` | Event end time | `10:00 AM` |
-| `{summary}` | Event title | `Team standup` |
-| `{url}` | Link to the event in Google Calendar | `https://...` |
+Event format placeholders: `{time}`, `{endTime}`, `{summary}`, `{url}`
 
-The format can be any markdown string, for example:
+### Calendars
+Lists all calendars fetched from Google. Each has an enable/disable toggle and a color picker. Click **Refresh** to sync the list from Google.
 
-```
-**{time}–{endTime}** {summary}
-```
+## Commands
 
-```
-[{time}-{endTime} {summary}]({url})
-```
+| Command | Description |
+|---|---|
+| `GCal: Open GCal Day View sidebar` | Opens the sidebar |
+| `GCal: Insert Google Calendar events for this note` | Inserts events at cursor in the active daily note |
+| `GCal: Create event note for selected event` | Creates a linked note for the selected sidebar event |
 
 ## Daily note filename formats
 
-The plugin recognizes filenames in `YYYY-MM-DD` format (e.g. `2026-05-29.md`), which is the default used by the Obsidian Daily Notes core plugin.
+The plugin recognizes filenames in `YYYY-MM-DD` format (e.g. `2026-05-29.md`), the default used by the Obsidian Daily Notes core plugin.
 
 ## Development
 
