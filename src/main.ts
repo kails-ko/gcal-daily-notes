@@ -1,114 +1,126 @@
-import {
-	Editor,
-	MarkdownView,
-	MarkdownFileInfo,
-	Modal,
-	Notice,
-	Plugin,
-} from 'obsidian';
-import {
-	DEFAULT_SETTINGS,
-	MyPluginSettings,
-	SampleSettingTab,
-} from './settings';
+import { MarkdownView, Notice, Plugin, TFile } from 'obsidian';
+import { DEFAULT_SETTINGS, GCalSettings, GCalSettingTab } from './settings';
+import { fetchEventsForDate } from './calendar';
 
-// Remember to rename these classes and interfaces!
+const DAILY_NOTE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
-export default class MyPlugin extends Plugin {
-	settings!: MyPluginSettings;
+export default class GCalDailyNotes extends Plugin {
+	settings!: GCalSettings;
 
 	async onload() {
 		await this.loadSettings();
+		this.addSettingTab(new GCalSettingTab(this.app, this));
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (_evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			},
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (
-				editor: Editor,
-				_ctx: MarkdownView | MarkdownFileInfo,
-			) => {
-				editor.replaceSelection('Sample editor command');
-			},
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView =
-					this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
+		// Wait until Obsidian has finished loading all existing files before
+		// listening for 'create', otherwise every file triggers on startup
+		this.app.workspace.onLayoutReady(() => {
+			this.registerEvent(
+				this.app.vault.on('create', (file) => {
+					if (file instanceof TFile) {
+						this.insertEventsIntoFile(file);
 					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			},
+				}),
+			);
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(activeDocument, 'click', (_evt: MouseEvent) => {
-			new Notice('Click');
+		this.addCommand({
+			id: 'insert-gcal-events',
+			name: 'Insert Google Calendar events for this note',
+			callback: () => this.insertEventsAtCursor(),
 		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(
-			window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000),
-		);
 	}
 
 	onunload() {}
+
+	// Called automatically when a daily note is created — appends to end of file
+	private async insertEventsIntoFile(file: TFile) {
+		const dateStr = this.extractDateFromFilename(file.basename);
+		if (!dateStr || !this.settings.refreshToken) return;
+
+		try {
+			const events = await fetchEventsForDate(dateStr, this.settings);
+			if (events.length === 0) return;
+
+			const block = this.formatBlock(events);
+			const existing = await this.app.vault.read(file);
+			await this.app.vault.modify(file, existing + block);
+			new Notice(`GCal: inserted ${events.length} event(s)`);
+		} catch (e) {
+			new Notice(`GCal error: ${(e as Error).message}`);
+			console.error(e);
+		}
+	}
+
+	// Called by the manual command — inserts at cursor position
+	private async insertEventsAtCursor() {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view) {
+			new Notice('Open a daily note first.');
+			return;
+		}
+
+		const file = view.file;
+		if (!file) return;
+
+		const dateStr = this.extractDateFromFilename(file.basename);
+		if (!dateStr) {
+			new Notice('This note doesn\'t look like a daily note (expected YYYY-MM-DD).');
+			return;
+		}
+
+		if (!this.settings.refreshToken) {
+			new Notice('Authorize Google Calendar in settings first.');
+			return;
+		}
+
+		try {
+			const events = await fetchEventsForDate(dateStr, this.settings);
+			if (events.length === 0) {
+				new Notice(`GCal: no events found for ${dateStr}`);
+				return;
+			}
+
+			const block = this.formatBlock(events);
+			view.editor.replaceSelection(block);
+			new Notice(`GCal: inserted ${events.length} event(s)`);
+		} catch (e) {
+			new Notice(`GCal error: ${(e as Error).message}`);
+			console.error(e);
+		}
+	}
+
+	private formatBlock(events: { summary: string; start: string; end: string; url: string }[]): string {
+		return events
+			.map((e) =>
+				this.settings.insertFormat
+					.replace('{time}', e.start)
+					.replace('{endTime}', e.end)
+					.replace('{summary}', e.summary)
+					.replace('{url}', e.url),
+			)
+			.join('\n') + '\n';
+	}
+
+	private extractDateFromFilename(basename: string): string | null {
+		if (DAILY_NOTE_REGEX.test(basename)) return basename;
+
+		const parsed = new Date(basename);
+		if (!isNaN(parsed.getTime())) {
+			return parsed.toISOString().slice(0, 10);
+		}
+
+		return null;
+	}
 
 	async loadSettings() {
 		this.settings = Object.assign(
 			{},
 			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<MyPluginSettings>,
+			(await this.loadData()) as Partial<GCalSettings>,
 		);
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
-	}
-}
-
-class SampleModal extends Modal {
-	onOpen() {
-		const { contentEl } = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const { contentEl } = this;
-		contentEl.empty();
 	}
 }
