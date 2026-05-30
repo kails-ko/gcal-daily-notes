@@ -32,7 +32,7 @@ export default class GCalDailyNotes extends Plugin {
 
 	onunload() {}
 
-	// Called automatically when a daily note is created — appends to end of file
+	// Called automatically when a daily note is created
 	private async insertEventsIntoFile(file: TFile) {
 		const dateStr = this.extractDateFromFilename(file.basename);
 		if (!dateStr || !this.settings.refreshToken) return;
@@ -42,8 +42,15 @@ export default class GCalDailyNotes extends Plugin {
 			if (events.length === 0) return;
 
 			const block = this.formatBlock(events);
-			const existing = await this.app.vault.read(file);
-			await this.app.vault.modify(file, existing + block);
+			const content = await this.app.vault.read(file);
+			const placeholder = this.settings.placeholder;
+
+			if (placeholder && content.includes(placeholder)) {
+				await this.app.vault.modify(file, content.replace(placeholder, block));
+			} else {
+				await this.app.vault.modify(file, content + block);
+			}
+
 			new Notice(`GCal: inserted ${events.length} event(s)`);
 		} catch (e) {
 			new Notice(`GCal error: ${(e as Error).message}`);
