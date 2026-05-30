@@ -7,6 +7,7 @@ export interface CalendarEvent {
 	end: string;
 	url: string;
 	startRaw: Date;
+	calendarColor: string;
 }
 
 export async function fetchCalendarList(settings: GCalSettings): Promise<CalendarEntry[]> {
@@ -15,9 +16,17 @@ export async function fetchCalendarList(settings: GCalSettings): Promise<Calenda
 		'https://www.googleapis.com/calendar/v3/users/me/calendarList',
 		{ headers: { Authorization: `Bearer ${accessToken}` } },
 	);
-	const data = await response.json() as { items?: { id: string; summary: string }[]; error?: { message: string } };
+	const data = await response.json() as {
+		items?: { id: string; summary: string; backgroundColor?: string }[];
+		error?: { message: string };
+	};
 	if (!response.ok) throw new Error(data.error?.message ?? 'Failed to fetch calendar list');
-	return (data.items ?? []).map((c) => ({ id: c.id, name: c.summary, enabled: true }));
+	return (data.items ?? []).map((c) => ({
+		id: c.id,
+		name: c.summary,
+		enabled: true,
+		color: c.backgroundColor ?? '',
+	}));
 }
 
 export async function fetchEventsForDate(
@@ -28,6 +37,11 @@ export async function fetchEventsForDate(
 
 	const dayStart = new Date(`${date}T00:00:00`).toISOString();
 	const dayEnd = new Date(`${date}T23:59:59`).toISOString();
+
+	// Build a color map from saved calendar settings
+	const colorMap = new Map<string, string>(
+		settings.calendars.map((c) => [c.id, c.color ?? '']),
+	);
 
 	// Use enabled calendars from settings, or fall back to fetching all
 	let calendarIds: string[];
@@ -60,8 +74,9 @@ export async function fetchEventsForDate(
 				return;
 			}
 
+			const calColor = colorMap.get(calId) ?? '';
 			for (const event of data.items ?? []) {
-				allEvents.push(formatEvent(event));
+				allEvents.push(formatEvent(event, calColor));
 			}
 		}),
 	);
@@ -81,7 +96,7 @@ function formatTime(dateTime: string): string {
 	return new Date(dateTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function formatEvent(event: GoogleCalendarEvent): CalendarEvent {
+function formatEvent(event: GoogleCalendarEvent, calendarColor: string): CalendarEvent {
 	const summary = event.summary ?? '(No title)';
 	const url = event.htmlLink ?? '';
 	const dateTimeRaw = event.start?.dateTime;
@@ -96,6 +111,7 @@ function formatEvent(event: GoogleCalendarEvent): CalendarEvent {
 			start: formatTime(dateTimeRaw),
 			end: endRaw ? formatTime(endRaw) : '',
 			startRaw: startDate,
+			calendarColor,
 		};
 	}
 
@@ -105,5 +121,6 @@ function formatEvent(event: GoogleCalendarEvent): CalendarEvent {
 		start: 'All day',
 		end: '',
 		startRaw: new Date(`${dateRaw}T00:00:00`),
+		calendarColor,
 	};
 }
