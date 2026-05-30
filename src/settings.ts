@@ -22,6 +22,7 @@ export interface GCalSettings {
 	eventNoteFolder: string;
 	eventNoteTemplate: string;
 	defaultSidebarView: SidebarView;
+	timelineHourHeight: number;
 }
 
 export const DEFAULT_SETTINGS: GCalSettings = {
@@ -34,6 +35,7 @@ export const DEFAULT_SETTINGS: GCalSettings = {
 	eventNoteFolder: '_tofile',
 	eventNoteTemplate: '',
 	defaultSidebarView: 'list',
+	timelineHourHeight: 60,
 };
 
 export class GCalSettingTab extends PluginSettingTab {
@@ -158,6 +160,25 @@ export class GCalSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
+
+		new Setting(containerEl)
+			.setName('Timeline hour height')
+			.setDesc('Height of each hour row in the timeline view (px). Drag to adjust density.')
+			.addSlider((slider) => {
+				const label = createEl('span', {
+					text: `${this.plugin.settings.timelineHourHeight}px`,
+					cls: 'gcal-slider-label',
+				});
+				slider
+					.setLimits(40, 120, 5)
+					.setValue(this.plugin.settings.timelineHourHeight)
+					.onChange(async (value) => {
+						this.plugin.settings.timelineHourHeight = value;
+						label.setText(`${value}px`);
+						await this.plugin.saveSettings();
+					});
+				slider.sliderEl.insertAdjacentElement('afterend', label);
+			});
 
 		new Setting(containerEl)
 			.setName('Template placeholder')

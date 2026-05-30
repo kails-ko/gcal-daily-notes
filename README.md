@@ -16,6 +16,8 @@ An [Obsidian](https://obsidian.md) plugin that integrates Google Calendar into y
 - **Color-coded calendars** — events are tinted by calendar color; customize colors via a color picker in settings
 - **Event note creation** — double-click any event (or use the command palette) to create a linked note from a template, with a customizable title
 - **Linked note badge** — events with an associated note show a `[[]]` badge; click it to open the note
+- **Selected event detail bar** — clicking an event pins a detail bar to the bottom of the sidebar showing the full title and time range, useful when event blocks are too small to display the full text
+- **Configurable timeline density** — set the height of each hour row in the timeline via a slider in settings
 - **Auto-insert on daily note creation** — events are inserted automatically when a `YYYY-MM-DD` note is created
 - **Manual insert command** — insert events at your cursor in any daily note
 - **Per-calendar toggles** — enable or disable individual calendars from settings
@@ -107,6 +109,7 @@ Templates support these tokens: `{{summary}}`, `{{date}}`, `{{time}}`, `{{endTim
 | Setting | Description |
 |---|---|
 | Default sidebar view | `Day list` or `Timeline` |
+| Timeline hour height | Height of each hour row in the timeline view (40–120px); drag the slider to adjust density |
 | Template placeholder | Token in your daily note template where events are inserted (default `{{gcal}}`) |
 | Event format | Format string for each event line inserted into daily notes |
 

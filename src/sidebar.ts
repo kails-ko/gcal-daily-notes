@@ -4,8 +4,6 @@ import { GCalSettings, SidebarView } from './settings';
 
 export const SIDEBAR_VIEW_TYPE = 'gcal-day-view';
 
-// How many pixels represent one hour in timeline view
-const PX_PER_HOUR = 60;
 // Timeline window: hours to render (6 AM – 10 PM)
 const TIMELINE_START_HOUR = 6;
 const TIMELINE_END_HOUR = 22;
@@ -184,6 +182,22 @@ export class GCalSidebarView extends ItemView {
 		} else {
 			this.renderList(body, timed);
 		}
+
+		// Detail bar — shown when an event is selected
+		this.renderDetailBar(container);
+	}
+
+	private renderDetailBar(container: HTMLElement) {
+		const existing = container.querySelector('.gcal-detail-bar');
+		if (existing) existing.remove();
+		if (!this.selectedEvent) return;
+
+		const ev = this.selectedEvent;
+		const bar = container.createDiv('gcal-detail-bar');
+
+		const timeStr = ev.end ? `${ev.start} – ${ev.end}` : ev.start;
+		bar.createEl('span', { cls: 'gcal-detail-time', text: timeStr });
+		bar.createEl('span', { cls: 'gcal-detail-title', text: ev.summary });
 	}
 
 	// ── List view ────────────────────────────────────────────────────────────
@@ -217,6 +231,7 @@ export class GCalSidebarView extends ItemView {
 	// ── Timeline view ────────────────────────────────────────────────────────
 
 	private renderTimeline(body: HTMLElement, timed: CalendarEvent[]) {
+		const PX_PER_HOUR = this.settings.timelineHourHeight ?? 60;
 		const totalHours = TIMELINE_END_HOUR - TIMELINE_START_HOUR;
 		const totalHeight = totalHours * PX_PER_HOUR;
 
@@ -340,6 +355,8 @@ export class GCalSidebarView extends ItemView {
 			this.selectedEvent = ev;
 			el.addClass('is-selected');
 		}
+		const container = this.containerEl.children[1] as HTMLElement;
+		this.renderDetailBar(container);
 	}
 
 	getLinkedNotePath(ev: CalendarEvent): string {
