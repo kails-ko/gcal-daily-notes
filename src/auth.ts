@@ -6,7 +6,7 @@ const REDIRECT_PORT = 42813;
 const REDIRECT_URI = `http://localhost:${REDIRECT_PORT}/callback`;
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
+const SCOPES = 'https://www.googleapis.com/auth/calendar.events';
 
 export function buildAuthUrl(clientId: string): string {
 	const params = new URLSearchParams({

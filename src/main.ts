@@ -1,8 +1,9 @@
 import { MarkdownView, Notice, Plugin, TFile } from 'obsidian';
 import { DEFAULT_SETTINGS, GCalSettings, GCalSettingTab } from './settings';
-import { fetchEventsForDate } from './calendar';
+import { fetchEventsForDate, createCalendarEvent } from './calendar';
 import { GCalSidebarView, SIDEBAR_VIEW_TYPE } from './sidebar';
 import { EventNoteModal } from './eventNoteModal';
+import { CreateEventModal } from './createEventModal';
 
 const DAILY_NOTE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -14,10 +15,11 @@ export default class GCalDailyNotes extends Plugin {
 		this.addSettingTab(new GCalSettingTab(this.app, this));
 
 		// Register sidebar view
-		this.registerView(
-			SIDEBAR_VIEW_TYPE,
-			(leaf) => new GCalSidebarView(leaf, this.settings),
-		);
+		this.registerView(SIDEBAR_VIEW_TYPE, (leaf) => {
+			const view = new GCalSidebarView(leaf, this.settings);
+			view.onCreateNote = () => void this.createEventNote();
+			return view;
+		});
 
 		// Ribbon icon to open sidebar
 		this.addRibbonIcon('calendar-days', 'GCal Day View', () => {
@@ -51,6 +53,12 @@ export default class GCalDailyNotes extends Plugin {
 			id: 'create-event-note',
 			name: 'Create event note for selected event',
 			callback: () => void this.createEventNote(),
+		});
+
+		this.addCommand({
+			id: 'create-gcal-event',
+			name: 'Create Google Calendar event',
+			callback: () => void this.createGCalEvent(),
 		});
 	}
 
@@ -105,7 +113,11 @@ export default class GCalDailyNotes extends Plugin {
 		const safeName = ev.summary.replace(/[\\/:*?"<>|]/g, '-');
 		const defaultTitle = `${date} ${safeName}`;
 
-		new EventNoteModal(this.app, defaultTitle, async (chosenTitle) => {
+		const sourceView = this.getMarkdownView();
+		const sourceFile = sourceView?.file ?? null;
+		const sourceCursor = sourceView?.editor.getCursor() ?? null;
+
+		new EventNoteModal(this.app, defaultTitle, async (chosenTitle, linkToCurrentNote) => {
 			const folder = this.settings.eventNoteFolder.replace(/\/$/, '');
 			const notePath = `${folder}/${chosenTitle}.md`;
 
@@ -138,12 +150,105 @@ export default class GCalDailyNotes extends Plugin {
 			}
 
 			try {
+				if (linkToCurrentNote && sourceFile && sourceCursor) {
+					const raw = await this.app.vault.read(sourceFile);
+					const lines = raw.split('\n');
+					const line = lines[sourceCursor.line] ?? '';
+					lines[sourceCursor.line] = line.slice(0, sourceCursor.ch) + `[[${chosenTitle}]]` + line.slice(sourceCursor.ch);
+					await this.app.vault.modify(sourceFile, lines.join('\n'));
+				} else if (linkToCurrentNote) {
+					new Notice('No active note to link into.');
+				}
 				const newFile = await this.app.vault.create(notePath, content);
 				await this.app.workspace.getLeaf(false).openFile(newFile);
 				await sidebar.renderView();
 				new Notice(`Created: ${newFile.basename}`);
 			} catch (e) {
 				new Notice(`Failed to create note: ${(e as Error).message}`);
+			}
+		}).open();
+	}
+
+	// ── Create GCal event ─────────────────────────────────────────────────────
+
+	private async createGCalEvent() {
+		if (!this.settings.refreshToken) {
+			new Notice('Authorize Google Calendar in settings first.');
+			return;
+		}
+
+		const enabledCals = this.settings.calendars.filter((c) => c.enabled);
+		if (enabledCals.length === 0) {
+			new Notice('No calendars configured. Refresh your calendar list in settings.');
+			return;
+		}
+
+		const sourceView = this.getMarkdownView();
+		const sourceFile = sourceView?.file ?? null;
+		const sourceCursor = sourceView?.editor.getCursor() ?? null;
+
+		new CreateEventModal(this.app, this.settings.calendars, async (opts) => {
+			try {
+				const eventUrl = await createCalendarEvent(
+					opts.calendarId,
+					{
+						summary: opts.title,
+						date: opts.date,
+						startTime: opts.startTime,
+						endTime: opts.endTime,
+						location: opts.location || undefined,
+						timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+					},
+					this.settings,
+				);
+
+				new Notice(`Event created: ${opts.title}`);
+
+				const safeName = opts.title.replace(/[\\/:*?"<>|]/g, '-');
+				const noteTitle = `${opts.date} ${safeName}`;
+				const folder = this.settings.eventNoteFolder.replace(/\/$/, '');
+				const notePath = `${folder}/${noteTitle}.md`;
+
+				if (opts.linkToCurrentNote && sourceFile && sourceCursor) {
+					const raw = await this.app.vault.read(sourceFile);
+					const lines = raw.split('\n');
+					const line = lines[sourceCursor.line] ?? '';
+					lines[sourceCursor.line] = line.slice(0, sourceCursor.ch) + `[[${noteTitle}]]` + line.slice(sourceCursor.ch);
+					await this.app.vault.modify(sourceFile, lines.join('\n'));
+				} else if (opts.linkToCurrentNote) {
+					new Notice('No active note open to link into.');
+				}
+
+				if (opts.createNote) {
+					const existing = this.app.vault.getFileByPath(notePath);
+					if (existing) {
+						await this.app.workspace.getLeaf(false).openFile(existing);
+					} else {
+						let content = '';
+						if (this.settings.eventNoteTemplate) {
+							const templateFile = this.app.vault.getFileByPath(this.settings.eventNoteTemplate);
+							if (templateFile) {
+								const raw = await this.app.vault.read(templateFile);
+								content = raw
+									.replace(/\{\{summary\}\}/g, opts.title)
+									.replace(/\{\{title\}\}/g, opts.title)
+									.replace(/\{\{date\}\}/g, opts.date)
+									.replace(/\{\{time\}\}/g, opts.startTime)
+									.replace(/\{\{icsEventStart\}\}/g, opts.startTime)
+									.replace(/\{\{endTime\}\}/g, opts.endTime)
+									.replace(/\{\{icsEventEnd\}\}/g, opts.endTime)
+									.replace(/\{\{url\}\}/g, eventUrl)
+									.replace(/\{\{icsEventUrl\}\}/g, eventUrl)
+									.replace(/\{\{location\}\}/g, opts.location);
+							}
+						}
+						const newFile = await this.app.vault.create(notePath, content);
+						await this.app.workspace.getLeaf(false).openFile(newFile);
+						new Notice(`Note created: ${noteTitle}`);
+					}
+				}
+			} catch (e) {
+				new Notice(`Failed to create event: ${(e as Error).message}`);
 			}
 		}).open();
 	}
@@ -233,6 +338,23 @@ export default class GCalDailyNotes extends Plugin {
 		}
 
 		return null;
+	}
+
+	// ── Helpers ───────────────────────────────────────────────────────────────
+
+	/** Returns the active MarkdownView, or falls back to the most recently
+	 *  modified markdown leaf if nothing is focused (e.g. command palette open). */
+	private getMarkdownView(): MarkdownView | null {
+		const active = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (active) return active;
+
+		let found: MarkdownView | null = null;
+		this.app.workspace.iterateAllLeaves((leaf) => {
+			if (!found && leaf.view instanceof MarkdownView) {
+				found = leaf.view;
+			}
+		});
+		return found;
 	}
 
 	async loadSettings() {
