@@ -15,6 +15,8 @@ An [Obsidian](https://obsidian.md) plugin that integrates Google Calendar into y
 - **Timeline view** — scrollable hourly grid with a live now-indicator and proportionally sized event blocks
 - **Color-coded calendars** — events are tinted by calendar color; customize colors via a color picker in settings
 - **Event note creation** — double-click any event (or use the command palette) to create a linked note from a template, with a customizable title
+- **Link to current note** — when creating an event note, optionally insert a `[[wikilink]]` into your currently open note at the cursor position
+- **Create Google Calendar events** — create new events directly from Obsidian via the command palette, with title, date, time, optional location, and calendar selection
 - **Linked note badge** — events with an associated note show a `[[]]` badge; click it to open the note
 - **Selected event detail bar** — clicking an event pins a detail bar to the bottom of the sidebar showing the full title and time range, useful when event blocks are too small to display the full text
 - **Configurable timeline density** — set the height of each hour row in the timeline via a slider in settings
@@ -42,9 +44,24 @@ Use the toggle buttons in the top-right of the sidebar header to switch between 
 1. Click an event row to select it (highlighted)
 2. Double-click, or run `Cmd+P → GCal: Create event note for selected event`
 3. Edit the pre-filled title in the modal and press **Enter** or **Create**
-4. The note is created in your configured folder and opens immediately
+4. Optionally toggle **Link to current note** to insert a `[[wikilink]]` at your cursor in the currently open note
+5. The note is created in your configured folder and opens immediately
 
 Once a note exists, a `[[]]` badge appears on the event row — click it to open the note directly.
+
+### Creating new calendar events
+
+Run `Cmd+P → GCal: Create Google Calendar event` to open the event creation modal. Fill in:
+
+- **Title** (required)
+- **Date** — pre-filled with today
+- **Start / end time** — pre-filled with the next 15-minute increment and one hour later
+- **Location** (optional)
+- **Calendar** — dropdown of your enabled calendars (shown when you have more than one)
+- **Link to current note** — inserts a `[[wikilink]]` at your cursor in the open note
+- **Create note for this event** — creates a linked Obsidian note using your event note template
+
+The event is posted to Google Calendar immediately on submit.
 
 ## Setup
 
@@ -80,6 +97,8 @@ Then enable it in **Settings → Community Plugins**.
 2. Enter your Client ID and Client Secret
 3. Click **Authorize** — a browser window will open to Google's consent screen
 4. After approving, the plugin stores your refresh token automatically
+
+> **Note:** The plugin requests the `calendar.events` scope, which allows both reading and creating events. If you previously authorized with an older version, click **Re-authorize** in settings to grant the updated scope.
 
 ### 5. Load your calendars
 
@@ -125,6 +144,7 @@ Lists all calendars fetched from Google. Each has an enable/disable toggle and a
 | `GCal: Open GCal Day View sidebar` | Opens the sidebar |
 | `GCal: Insert Google Calendar events for this note` | Inserts events at cursor in the active daily note |
 | `GCal: Create event note for selected event` | Creates a linked note for the selected sidebar event |
+| `GCal: Create Google Calendar event` | Opens the event creation modal to post a new event to Google Calendar |
 
 ## Daily note filename formats
 

@@ -85,6 +85,46 @@ export async function fetchEventsForDate(
 	return allEvents;
 }
 
+export async function createCalendarEvent(
+	calendarId: string,
+	event: {
+		summary: string;
+		date: string;
+		startTime: string;
+		endTime: string;
+		location?: string;
+		description?: string;
+		timeZone: string;
+	},
+	settings: GCalSettings,
+): Promise<string> {
+	const accessToken = await getAccessToken(settings);
+
+	const body: Record<string, unknown> = {
+		summary: event.summary,
+		start: { dateTime: `${event.date}T${event.startTime}:00`, timeZone: event.timeZone },
+		end: { dateTime: `${event.date}T${event.endTime}:00`, timeZone: event.timeZone },
+	};
+	if (event.location) body.location = event.location;
+	if (event.description) body.description = event.description;
+
+	const response = await fetch(
+		`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+		{
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${accessToken}`,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify(body),
+		},
+	);
+
+	const data = await response.json() as { htmlLink?: string; error?: { message: string } };
+	if (!response.ok) throw new Error(data.error?.message ?? 'Failed to create event');
+	return data.htmlLink ?? '';
+}
+
 interface GoogleCalendarEvent {
 	summary?: string;
 	htmlLink?: string;

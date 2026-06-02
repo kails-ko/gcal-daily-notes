@@ -2,9 +2,10 @@ import { App, Modal, Setting } from 'obsidian';
 
 export class EventNoteModal extends Modal {
 	private title: string;
-	private onSubmit: (title: string) => void;
+	private linkToCurrentNote = false;
+	private onSubmit: (title: string, linkToCurrentNote: boolean) => void;
 
-	constructor(app: App, defaultTitle: string, onSubmit: (title: string) => void) {
+	constructor(app: App, defaultTitle: string, onSubmit: (title: string, linkToCurrentNote: boolean) => void) {
 		super(app);
 		this.title = defaultTitle;
 		this.onSubmit = onSubmit;
@@ -37,6 +38,11 @@ export class EventNoteModal extends Modal {
 			});
 
 		new Setting(contentEl)
+			.setName('Link to current note')
+			.setDesc('Insert a [[wikilink]] to this note at your cursor')
+			.addToggle((toggle) => toggle.setValue(false).onChange((v) => { this.linkToCurrentNote = v; }));
+
+		new Setting(contentEl)
 			.addButton((btn) =>
 				btn
 					.setButtonText('Create')
@@ -52,7 +58,7 @@ export class EventNoteModal extends Modal {
 		const trimmed = this.title.trim();
 		if (!trimmed) return;
 		this.close();
-		this.onSubmit(trimmed);
+		this.onSubmit(trimmed, this.linkToCurrentNote);
 	}
 
 	onClose() {
